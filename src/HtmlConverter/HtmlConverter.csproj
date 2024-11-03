@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <UseWPF>true</UseWPF>
+        <TargetFrameworks>net8.0-windows;net6.0-windows</TargetFrameworks>
+        <RootNamespace>Antelcat.Wpf</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="HtmlAgilityPack" Version="1.11.70"/>
+    </ItemGroup>
+</Project>
