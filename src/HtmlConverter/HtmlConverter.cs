@@ -32,10 +32,10 @@ public static class HtmlConverter
     {
         var flowDocument = new FlowDocument();
         
-        var bodyNode = htmlDocument.DocumentNode.SelectSingleNode("//body") ?? htmlDocument.DocumentNode;
-        if (bodyNode == null) return flowDocument;
+        var bodyNode = htmlDocument.DocumentNode?.SelectSingleNode("//body") ?? htmlDocument.DocumentNode;
+        if (bodyNode?.SelectNodes("//text()") is not { } textNodes) return flowDocument;
 
-        foreach (var node in bodyNode.SelectNodes("//text()"))
+        foreach (var node in textNodes)
         {
             node.InnerHtml = SpaceCharacterRegex().Replace(node.InnerHtml, " ");
         }
