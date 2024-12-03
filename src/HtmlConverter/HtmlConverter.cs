@@ -12,50 +12,55 @@ using HtmlAgilityPack;
 
 namespace Antelcat.Wpf;
 
+public interface IImageTransformer
+{
+    Image ConvertHtmlToImage(HtmlNode node);
+    
+    string ConvertImageToHtml(Image image);
+}
+
 #if NET8_0_OR_GREATER
 public static partial class HtmlConverter
 #else
 public static class HtmlConverter
 #endif
 {
-    public static FlowDocument ConvertHtmlToFlowDocument(string html)
+    public static FlowDocument ConvertHtmlToFlowDocument(string html, IImageTransformer? imageTransformer = null)
     {
         if (string.IsNullOrWhiteSpace(html)) return new FlowDocument();
         
         var htmlDocument = new HtmlDocument();
         htmlDocument.LoadHtml(html);
 
-        return ConvertHtmlDocumentToFlowDocument(htmlDocument);
-    }
-
-    public static FlowDocument ConvertHtmlDocumentToFlowDocument(HtmlDocument htmlDocument)
-    {
         var flowDocument = new FlowDocument();
         
         var bodyNode = htmlDocument.DocumentNode?.SelectSingleNode("//body") ?? htmlDocument.DocumentNode;
-        if (bodyNode?.SelectNodes("//text()") is not { } textNodes) return flowDocument;
+        if (bodyNode == null) return flowDocument;
 
-        foreach (var node in textNodes)
+        if (bodyNode.SelectNodes("//text()") is { } textNodes)
         {
-            node.InnerHtml = SpaceCharacterRegex().Replace(node.InnerHtml, " ");
+            foreach (var node in textNodes)
+            {
+                node.InnerHtml = SpaceCharacterRegex().Replace(node.InnerHtml, " ");
+            }
         }
 
         var section = new Section { Name = "body" };
         flowDocument.Blocks.Add(section);
         foreach (var childNode in bodyNode.ChildNodes)
         {
-            AddHtmlNodeToTextElement(childNode, section);
+            AddHtmlNodeToTextElement(childNode, section, imageTransformer);
         }
 
         return flowDocument;
     }
 
-    private static void AddHtmlNodeToTextElement(HtmlNode htmlNode, TextElement parent)
+    private static void AddHtmlNodeToTextElement(HtmlNode htmlNode, TextElement parent, IImageTransformer? imageTransformer)
     {
-        var textElement = CreateTextElement(htmlNode);
+        var textElement = CreateTextElement(htmlNode, imageTransformer);
         if (textElement == null) return;
         AddTextElementToTextElement(textElement, parent);
-        foreach (var child in htmlNode.ChildNodes) AddHtmlNodeToTextElement(child, textElement);
+        foreach (var child in htmlNode.ChildNodes) AddHtmlNodeToTextElement(child, textElement, imageTransformer);
     }
 
     private static void AddTextElementToTextElement(TextElement child, TextElement parent)
@@ -98,7 +103,7 @@ public static class HtmlConverter
         }
     }
 
-    private static TextElement? CreateTextElement(HtmlNode htmlNode)
+    private static TextElement? CreateTextElement(HtmlNode htmlNode, IImageTransformer? imageTransformer)
     {
         Span CreateSpan()
         {
@@ -175,7 +180,7 @@ public static class HtmlConverter
                 {
                     NavigateUri = new Uri(htmlNode.GetAttributeValue("href", ""), UriKind.RelativeOrAbsolute)
                 },
-                "img" => new InlineUIContainer(new Image
+                "img" => new InlineUIContainer(imageTransformer?.ConvertHtmlToImage(htmlNode) ?? new Image
                 {
                     Source = new BitmapImage(new Uri(htmlNode.GetAttributeValue("src", null), UriKind.RelativeOrAbsolute)),
                     Width = double.TryParse(htmlNode.GetAttributeValue("width", null), out var value) ? value : double.NaN,
@@ -203,16 +208,16 @@ public static class HtmlConverter
         };
     }
 
-    public static string ConvertFlowDocumentToHtml(FlowDocument flowDocument)
+    public static string ConvertFlowDocumentToHtml(FlowDocument flowDocument, IImageTransformer? imageTransformer = null)
     {
         var sb = new StringBuilder();
         sb.Append("<!doctype html><html><head><meta charset='UTF-8'></head><body>");
-        foreach (var block in flowDocument.Blocks) ConvertBlockToHtml(block, sb);
+        foreach (var block in flowDocument.Blocks) ConvertBlockToHtml(block, sb, imageTransformer);
         sb.Append("</body></html>");
         return sb.ToString();
     }
 
-    private static void ConvertBlockToHtml(Block block, StringBuilder sb)
+    private static void ConvertBlockToHtml(Block block, StringBuilder sb, IImageTransformer? imageTransformer)
     {
         switch (block)
         {
@@ -231,7 +236,7 @@ public static class HtmlConverter
                 sb.Append('<').Append(tag).Append('>');
                 foreach (var inline in paragraph.Inlines)
                 {
-                    ConvertInlineToHtml(inline, sb);
+                    ConvertInlineToHtml(inline, sb, imageTransformer);
                 }
                 sb.Append("</").Append(tag).Append('>');
                 break;
@@ -240,7 +245,7 @@ public static class HtmlConverter
             {
                 foreach (var blockChild in section.Blocks)
                 {
-                    ConvertBlockToHtml(blockChild, sb);
+                    ConvertBlockToHtml(blockChild, sb, imageTransformer);
                 }
                 break;
             }
@@ -257,7 +262,7 @@ public static class HtmlConverter
                     sb.Append("<li>");
                     foreach (var inline in listItem.Blocks)
                     {
-                        ConvertBlockToHtml(inline, sb);
+                        ConvertBlockToHtml(inline, sb, imageTransformer);
                     }
                     sb.Append("</li>");
                 }
@@ -271,13 +276,13 @@ public static class HtmlConverter
             }
             case BlockUIContainer { Child: Image image }:
             {
-                ConvertImageToHtml(image, sb);
+                ConvertImageToHtml(image, sb, imageTransformer);
                 break;
             }
         }
     }
 
-    private static void ConvertInlineToHtml(Inline inline, StringBuilder sb)
+    private static void ConvertInlineToHtml(Inline inline, StringBuilder sb, IImageTransformer? imageTransformer)
     {
         bool TryReadLocalValue(DependencyProperty dp, out object? value)
         {
@@ -355,7 +360,7 @@ public static class HtmlConverter
                 sb.Append("<b>");
                 foreach (var inlineChild in bold.Inlines)
                 {
-                    ConvertInlineToHtml(inlineChild, sb);
+                    ConvertInlineToHtml(inlineChild, sb, imageTransformer);
                 }
                 sb.Append("</b>");
                 break;
@@ -365,7 +370,7 @@ public static class HtmlConverter
                 sb.Append("<i>");
                 foreach (var inlineChild in italic.Inlines)
                 {
-                    ConvertInlineToHtml(inlineChild, sb);
+                    ConvertInlineToHtml(inlineChild, sb, imageTransformer);
                 }
                 sb.Append("</i>");
                 break;
@@ -375,14 +380,14 @@ public static class HtmlConverter
                 sb.Append($"<a href=\"{hyperlink.NavigateUri}\">");
                 foreach (var inlineChild in hyperlink.Inlines)
                 {
-                    ConvertInlineToHtml(inlineChild, sb);
+                    ConvertInlineToHtml(inlineChild, sb, imageTransformer);
                 }
                 sb.Append("</a>");
                 break;
             }
             case InlineUIContainer { Child: Image image }:
             {
-                ConvertImageToHtml(image, sb);
+                ConvertImageToHtml(image, sb, imageTransformer);
                 break;
             }
         }
@@ -390,8 +395,14 @@ public static class HtmlConverter
         if (isInsideFont) sb.Append("</font>");
     }
 
-    private static void ConvertImageToHtml(Image image, StringBuilder sb)
+    private static void ConvertImageToHtml(Image image, StringBuilder sb, IImageTransformer? imageTransformer)
     {
+        if (imageTransformer != null)
+        {
+            sb.Append(imageTransformer.ConvertImageToHtml(image));
+            return;
+        }
+        
         if (image.Source is not BitmapImage source) return;
         sb.Append($"<img src=\"{source.UriSource}\"");
         if (!double.IsNaN(image.Width)) sb.Append($" width=\"{image.Width}\"");
